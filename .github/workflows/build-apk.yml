@@ -64,53 +64,24 @@ jobs:
           flutter precache --android
 
       - name: Patch rtmp_streaming
+        shell: bash
         run: |
           PLUGIN="$HOME/.pub-cache/hosted/pub.dev/rtmp_streaming-2.0.1/android/build.gradle"
 
           test -f "$PLUGIN"
 
-          python3 - "$PLUGIN" <<'PY'
-          import sys
-          from pathlib import Path
+          echo "Patching rtmp_streaming..."
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
+          perl -0pi -e 's/kotlinOptions\s*\{\s*jvmTarget\s*=\s*"17"\s*\}/kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17 } }/s' "$PLUGIN"
 
-          old = '''kotlinOptions {
-              jvmTarget  = "17"
-          }'''
-
-          new = '''kotlin {
-              compilerOptions {
-                  jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
-              }
-          }'''
-
-          if old in text:
-              text = text.replace(old, new)
-
-          if "https://jitpack.io" not in text:
-              text += '''
-
-repositories {
-    google()
-    mavenCentral()
-    maven {
-        url 'https://jitpack.io'
-    }
-}
-'''
-
-          path.write_text(text)
-
-          print("rtmp_streaming patched successfully.")
-          PY
+          echo "Patched rtmp_streaming:"
+          nl -ba "$PLUGIN" | sed -n '25,45p'
 
       - name: Flutter Analyze
         run: |
           flutter analyze
 
-      - name: Build APK
+      - name: Build Stream V19 APK
         run: |
           flutter build apk --release
 
@@ -118,16 +89,16 @@ repositories {
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
 
-          echo "APK CREATED:"
+          echo "========================================"
+          echo "STREAM V19 APK CREATED"
+          echo "========================================"
+
           ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Prepare APK
         run: |
           mkdir -p release
-
-          cp \
-            build/app/outputs/flutter-apk/app-release.apk \
-            release/Stream-V19-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk release/Stream-V19-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
