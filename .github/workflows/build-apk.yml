@@ -7,6 +7,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: stream-v19-build
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build Stream V19 Release APK
@@ -14,15 +18,26 @@ jobs:
 
     steps:
 
+      # =========================================
+      # 1. Checkout
+      # =========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # =========================================
+      # 2. Java
+      # =========================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+
+      # =========================================
+      # 3. Flutter
+      # =========================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -30,37 +45,37 @@ jobs:
           channel: stable
           cache: true
 
+
+      # =========================================
+      # 4. Android SDK
+      # =========================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+
+      # =========================================
+      # 5. Android licenses
+      # =========================================
       - name: Accept Android licenses
         run: |
           yes | sdkmanager --licenses > /dev/null || true
 
+
+      # =========================================
+      # 6. Create local.properties
+      # =========================================
       - name: Create local.properties
         run: |
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
 
-      - name: Prepare Gradle
-        run: |
-          mkdir -p "$HOME/gradle-9.3.1"
+          echo "local.properties created."
 
-          curl -L \
-            --fail \
-            --retry 3 \
-            https://services.gradle.org/distributions/gradle-9.3.1-bin.zip \
-            -o "$HOME/gradle-9.3.1.zip"
 
-          unzip -q \
-            "$HOME/gradle-9.3.1.zip" \
-            -d "$HOME/gradle-9.3.1"
-
-          echo "$HOME/gradle-9.3.1/gradle-9.3.1/bin" >> "$GITHUB_PATH"
-
-          gradle --version
-
-      - name: Verify Project
+      # =========================================
+      # 7. Verify project
+      # =========================================
+      - name: Verify Flutter project
         run: |
           echo "========================================"
           echo "PROJECT"
@@ -86,55 +101,122 @@ jobs:
           test -f android/gradle/wrapper/gradle-wrapper.properties
 
           echo ""
-          echo "Project structure OK"
+          echo "Project structure OK."
 
-      - name: Configure Gradle Wrapper
+
+      # =========================================
+      # 8. Show Gradle configuration
+      # =========================================
+      - name: Check Gradle configuration
         run: |
-          cat > android/gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-9.3.1-bin.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
+          echo "========================================"
+          echo "GRADLE CONFIGURATION"
+          echo "========================================"
 
           cat android/gradle/wrapper/gradle-wrapper.properties
 
+          echo ""
+          echo "========================================"
+
+
+      # =========================================
+      # 9. Setup Gradle 9.3.1
+      # =========================================
+      - name: Setup Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+
+      # =========================================
+      # 10. Verify Gradle
+      # =========================================
+      - name: Verify Gradle
+        run: |
+          gradle --version
+
+
+      # =========================================
+      # 11. Flutter Doctor
+      # =========================================
       - name: Flutter Doctor
         run: |
           flutter --version
           dart --version
           flutter doctor -v
 
+
+      # =========================================
+      # 12. Clean
+      # =========================================
       - name: Flutter Clean
         run: |
           flutter clean
 
+
+      # =========================================
+      # 13. Dependencies
+      # =========================================
       - name: Flutter Pub Get
         run: |
           flutter pub get
 
+
+      # =========================================
+      # 14. Inspect RTMP Streaming
+      # =========================================
+      - name: Inspect rtmp_streaming
+        run: |
+          PLUGIN="$HOME/.pub-cache/hosted/pub.dev/rtmp_streaming-2.0.1/android/build.gradle"
+
+          echo "========================================"
+          echo "rtmp_streaming 2.0.1"
+          echo "========================================"
+
+          test -f "$PLUGIN"
+
+          nl -ba "$PLUGIN"
+
+          echo "========================================"
+
+
+      # =========================================
+      # 15. Flutter Analyze
+      # =========================================
       - name: Flutter Analyze
         run: |
           flutter analyze
 
+
+      # =========================================
+      # 16. Build APK
+      # =========================================
       - name: Build Stream V19 APK
         run: |
           flutter build apk --release
 
+
+      # =========================================
+      # 17. Verify APK
+      # =========================================
       - name: Verify APK
         run: |
-          test -f build/app/outputs/flutter-apk/app-release.apk
+          echo "========================================"
+          echo "APK"
+          echo "========================================"
 
-          echo "========================================"
-          echo "APK CREATED"
-          echo "========================================"
+          test -f build/app/outputs/flutter-apk/app-release.apk
 
           ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Prepare APK
+          echo ""
+          echo "Stream V19 APK created successfully."
+
+
+      # =========================================
+      # 18. Prepare APK
+      # =========================================
+      - name: Prepare Stream V19 APK
         run: |
           mkdir -p release
 
@@ -142,6 +224,12 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk \
             release/Stream-V19-release.apk
 
+          ls -lh release/Stream-V19-release.apk
+
+
+      # =========================================
+      # 19. Upload APK
+      # =========================================
       - name: Upload Stream V19 APK
         uses: actions/upload-artifact@v4
         with:
