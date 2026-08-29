@@ -18,26 +18,15 @@ jobs:
 
     steps:
 
-      # =========================================
-      # 1. Checkout
-      # =========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # =========================================
-      # 2. Java
-      # =========================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-
-      # =========================================
-      # 3. Flutter
-      # =========================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -45,178 +34,125 @@ jobs:
           channel: stable
           cache: true
 
-
-      # =========================================
-      # 4. Android SDK
-      # =========================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-
-      # =========================================
-      # 5. Android licenses
-      # =========================================
       - name: Accept Android licenses
         run: |
           yes | sdkmanager --licenses > /dev/null || true
 
-
-      # =========================================
-      # 6. Create local.properties
-      # =========================================
       - name: Create local.properties
         run: |
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
 
-          echo "local.properties created."
-
-
-      # =========================================
-      # 7. Verify project
-      # =========================================
-      - name: Verify Flutter project
-        run: |
-          echo "========================================"
-          echo "PROJECT"
-          echo "========================================"
-
-          pwd
-
-          echo ""
-          echo "Root:"
-          ls -la
-
-          echo ""
-          echo "Android:"
-          ls -la android
-
-          echo ""
-          echo "Gradle:"
-          ls -la android/gradle/wrapper
-
-          test -f pubspec.yaml
-          test -d lib
-          test -d android
-          test -f android/gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "Project structure OK."
-
-
-      # =========================================
-      # 8. Show Gradle configuration
-      # =========================================
-      - name: Check Gradle configuration
-        run: |
-          echo "========================================"
-          echo "GRADLE CONFIGURATION"
-          echo "========================================"
-
-          cat android/gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "========================================"
-
-
-      # =========================================
-      # 9. Setup Gradle 9.3.1
-      # =========================================
       - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
 
-
-      # =========================================
-      # 10. Verify Gradle
-      # =========================================
-      - name: Verify Gradle
+      - name: Verify project
         run: |
-          gradle --version
+          test -f pubspec.yaml
+          test -d lib
+          test -d android
+          test -f android/gradle/wrapper/gradle-wrapper.properties
 
+          echo "Project structure OK"
 
-      # =========================================
-      # 11. Flutter Doctor
-      # =========================================
       - name: Flutter Doctor
         run: |
           flutter --version
           dart --version
           flutter doctor -v
 
-
-      # =========================================
-      # 12. Clean
-      # =========================================
       - name: Flutter Clean
         run: |
           flutter clean
 
-
-      # =========================================
-      # 13. Dependencies
-      # =========================================
       - name: Flutter Pub Get
         run: |
           flutter pub get
 
-
-      # =========================================
-      # 14. Inspect RTMP Streaming
-      # =========================================
-      - name: Inspect rtmp_streaming
+      # ==================================================
+      # PATCH rtmp_streaming 2.0.1 FOR AGP 9
+      # ==================================================
+      - name: Patch rtmp_streaming 2.0.1
         run: |
           PLUGIN="$HOME/.pub-cache/hosted/pub.dev/rtmp_streaming-2.0.1/android/build.gradle"
 
-          echo "========================================"
-          echo "rtmp_streaming 2.0.1"
-          echo "========================================"
+          echo "Checking:"
+          echo "$PLUGIN"
 
           test -f "$PLUGIN"
 
-          nl -ba "$PLUGIN"
+          echo ""
+          echo "Original rtmp_streaming build.gradle:"
+          nl -ba "$PLUGIN" | sed -n '25,45p'
 
-          echo "========================================"
+          python3 - <<'PY'
+          from pathlib import Path
 
+          path = Path.home() / ".pub-cache/hosted/pub.dev/rtmp_streaming-2.0.1/android/build.gradle"
 
-      # =========================================
-      # 15. Flutter Analyze
-      # =========================================
+          text = path.read_text()
+
+          old = '''kotlinOptions {
+              jvmTarget = "17"
+          }'''
+
+          new = '''kotlin {
+              compilerOptions {
+                  jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+              }
+          }'''
+
+          if old not in text:
+              print("Expected kotlinOptions block was not found.")
+              print("Current block around kotlinOptions:")
+
+              lines = text.splitlines()
+
+              for i, line in enumerate(lines):
+                  if "kotlinOptions" in line:
+                      start = max(0, i - 5)
+                      end = min(len(lines), i + 8)
+
+                      for n in range(start, end):
+                          print(f"{n + 1}: {lines[n]}")
+
+              raise SystemExit(1)
+
+          text = text.replace(old, new)
+
+          path.write_text(text)
+
+          print("Patch applied successfully.")
+          PY
+
+          echo ""
+          echo "Patched rtmp_streaming build.gradle:"
+          nl -ba "$PLUGIN" | sed -n '25,50p'
+
       - name: Flutter Analyze
         run: |
           flutter analyze
 
-
-      # =========================================
-      # 16. Build APK
-      # =========================================
       - name: Build Stream V19 APK
         run: |
           flutter build apk --release
 
-
-      # =========================================
-      # 17. Verify APK
-      # =========================================
       - name: Verify APK
         run: |
-          echo "========================================"
-          echo "APK"
-          echo "========================================"
-
           test -f build/app/outputs/flutter-apk/app-release.apk
+
+          echo "========================================"
+          echo "STREAM V19 APK CREATED"
+          echo "========================================"
 
           ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-          echo ""
-          echo "Stream V19 APK created successfully."
-
-
-      # =========================================
-      # 18. Prepare APK
-      # =========================================
-      - name: Prepare Stream V19 APK
+      - name: Prepare APK
         run: |
           mkdir -p release
 
@@ -224,12 +160,6 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk \
             release/Stream-V19-release.apk
 
-          ls -lh release/Stream-V19-release.apk
-
-
-      # =========================================
-      # 19. Upload APK
-      # =========================================
       - name: Upload Stream V19 APK
         uses: actions/upload-artifact@v4
         with:
