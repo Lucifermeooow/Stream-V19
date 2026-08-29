@@ -18,7 +18,7 @@ jobs:
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -34,7 +34,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Setup Android SDK
+      - name: Setup Android
         uses: android-actions/setup-android@v3
 
       - name: Accept Android licenses
@@ -46,45 +46,10 @@ jobs:
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
 
-      - name: Setup Gradle 9.3.1
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
-
-      - name: Verify Project
-        run: |
-          echo "========================================"
-          echo "PROJECT"
-          echo "========================================"
-
-          pwd
-          ls -la
-
-          echo ""
-          echo "Android:"
-          ls -la android
-
-          echo ""
-          echo "Gradle:"
-          ls -la android/gradle/wrapper
-
-          test -f pubspec.yaml
-          test -d lib
-          test -d android
-          test -f android/gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "Project structure OK."
-
-      - name: Check Gradle Version
-        run: |
-          gradle --version
-
-      - name: Flutter Doctor
-        run: |
-          flutter --version
-          dart --version
-          flutter doctor -v
 
       - name: Flutter Clean
         run: |
@@ -94,92 +59,67 @@ jobs:
         run: |
           flutter pub get
 
-      # ==========================================
-      # PATCH RTMP STREAMING
-      # ==========================================
-      - name: Patch rtmp_streaming 2.0.1
+      - name: Precache Flutter Android
+        run: |
+          flutter precache --android
+
+      - name: Patch rtmp_streaming
         run: |
           PLUGIN="$HOME/.pub-cache/hosted/pub.dev/rtmp_streaming-2.0.1/android/build.gradle"
 
-          echo "========================================"
-          echo "RTMP STREAMING PATCH"
-          echo "========================================"
-
           test -f "$PLUGIN"
 
-          echo ""
-          echo "Before patch:"
-          nl -ba "$PLUGIN" | sed -n '25,45p'
-
           python3 - "$PLUGIN" <<'PY'
-          import re
           import sys
           from pathlib import Path
 
           path = Path(sys.argv[1])
           text = path.read_text()
 
-          pattern = r'''(?ms)^[ \t]*kotlinOptions[ \t]*\{.*?^[ \t]*\}'''
+          old = '''kotlinOptions {
+              jvmTarget  = "17"
+          }'''
 
-          replacement = '''    kotlin {
+          new = '''kotlin {
               compilerOptions {
                   jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
               }
           }'''
 
-          new_text, count = re.subn(
-              pattern,
-              replacement,
-              text,
-              count=1
-          )
+          if old in text:
+              text = text.replace(old, new)
 
-          if count != 1:
-              print("ERROR: kotlinOptions block was not found.")
-              print("")
-              print("Current kotlinOptions occurrences:")
+          if "https://jitpack.io" not in text:
+              text += '''
 
-              for match in re.finditer(r'kotlinOptions', text):
-                  start = max(0, match.start() - 100)
-                  end = min(len(text), match.end() + 200)
-                  print(text[start:end])
+repositories {
+    google()
+    mavenCentral()
+    maven {
+        url 'https://jitpack.io'
+    }
+}
+'''
 
-              sys.exit(1)
+          path.write_text(text)
 
-          path.write_text(new_text)
-
-          print("SUCCESS: kotlinOptions was replaced.")
+          print("rtmp_streaming patched successfully.")
           PY
-
-          echo ""
-          echo "After patch:"
-          nl -ba "$PLUGIN" | sed -n '25,50p'
-
-          echo ""
-          echo "========================================"
-          echo "PATCH COMPLETE"
-          echo "========================================"
 
       - name: Flutter Analyze
         run: |
           flutter analyze
 
-      - name: Build Stream V19 APK
+      - name: Build APK
         run: |
           flutter build apk --release
 
       - name: Verify APK
         run: |
-          echo "========================================"
-          echo "APK VERIFICATION"
-          echo "========================================"
-
           test -f build/app/outputs/flutter-apk/app-release.apk
 
+          echo "APK CREATED:"
           ls -lh build/app/outputs/flutter-apk/app-release.apk
-
-          echo ""
-          echo "STREAM V19 APK CREATED SUCCESSFULLY"
 
       - name: Prepare APK
         run: |
@@ -189,9 +129,7 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk \
             release/Stream-V19-release.apk
 
-          ls -lh release/Stream-V19-release.apk
-
-      - name: Upload Stream V19 APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Stream-V19-APK
