@@ -14,9 +14,16 @@ jobs:
 
     steps:
 
+      # =========================================
+      # 1. Checkout
+      # =========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # =========================================
+      # 2. Java 17
+      # =========================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -24,6 +31,10 @@ jobs:
           java-version: "17"
           cache: gradle
 
+
+      # =========================================
+      # 3. Flutter 3.47.2
+      # =========================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -31,16 +42,43 @@ jobs:
           channel: stable
           cache: true
 
+
+      # =========================================
+      # 4. Android SDK
+      # =========================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+
+      # =========================================
+      # 5. Accept Android licenses
+      # =========================================
       - name: Accept Android licenses
         run: |
           yes | sdkmanager --licenses > /dev/null || true
 
-      - name: Verify project
+
+      # =========================================
+      # 6. Create local.properties
+      # =========================================
+      - name: Create Android local.properties
         run: |
-          echo "Project:"
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
+
+          echo "android/local.properties:"
+          cat android/local.properties
+
+
+      # =========================================
+      # 7. Verify project
+      # =========================================
+      - name: Verify Flutter project
+        run: |
+          echo "========================================"
+          echo "PROJECT"
+          echo "========================================"
+
           pwd
 
           echo ""
@@ -52,127 +90,112 @@ jobs:
           ls -la android
 
           echo ""
+          echo "Gradle:"
+          ls -la android/gradle || true
+
+          echo ""
+          echo "Gradle Wrapper:"
+          ls -la android/gradle/wrapper || true
+
+          echo ""
           echo "Required files:"
 
           test -f pubspec.yaml
           test -d lib
           test -d android
+          test -f android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.properties
 
-          echo "pubspec.yaml: OK"
-          echo "lib/: OK"
-          echo "android/: OK"
+          echo ""
+          echo "All required files exist."
 
-      - name: Create Flutter local.properties
+
+      # =========================================
+      # 8. Make Gradle executable
+      # =========================================
+      - name: Prepare Gradle Wrapper
         run: |
-          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
-          echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
-
-          echo "Created android/local.properties:"
-          cat android/local.properties
-
-      - name: Create Gradle Wrapper
-        run: |
-          mkdir -p android/gradle/wrapper
-
-          cat > android/gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-
-          echo "Gradle wrapper configuration:"
-          cat android/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Create Gradle Wrapper Script
-        run: |
-          cat > android/gradlew <<'EOF'
-          #!/bin/sh
-
-          APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-
-          GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
-
-          DIST_URL="https://services.gradle.org/distributions/gradle-8.14-bin.zip"
-
-          DIST_DIR="$GRADLE_USER_HOME/wrapper/dists/gradle-8.14-bin"
-
-          mkdir -p "$DIST_DIR"
-
-          ZIP_FILE="$DIST_DIR/gradle-8.14-bin.zip"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "Downloading Gradle 8.14..."
-            curl -L \
-              --fail \
-              --retry 3 \
-              "$DIST_URL" \
-              -o "$ZIP_FILE"
-          fi
-
-          INSTALL_DIR="$DIST_DIR/gradle-8.14"
-
-          if [ ! -x "$INSTALL_DIR/bin/gradle" ]; then
-            rm -rf "$INSTALL_DIR"
-
-            mkdir -p "$INSTALL_DIR"
-
-            unzip -q "$ZIP_FILE" \
-              -d "$DIST_DIR"
-
-            if [ -d "$DIST_DIR/gradle-8.14" ]; then
-              :
-            else
-              FOUND=$(find "$DIST_DIR" -maxdepth 1 -type d -name "gradle-8.14*" | head -1)
-
-              if [ -n "$FOUND" ]; then
-                mv "$FOUND" "$INSTALL_DIR"
-              fi
-            fi
-          fi
-
-          exec "$INSTALL_DIR/bin/gradle" "$@"
-          EOF
-
           chmod +x android/gradlew
 
-      - name: Check Gradle
+          echo "Gradle wrapper:"
+          ls -lh android/gradlew
+
+          echo ""
+          echo "Gradle configuration:"
+          cat android/gradle/wrapper/gradle-wrapper.properties
+
+
+      # =========================================
+      # 9. Check Gradle
+      # =========================================
+      - name: Check Gradle Version
         run: |
           android/gradlew --version
 
+
+      # =========================================
+      # 10. Flutter Doctor
+      # =========================================
       - name: Flutter Doctor
         run: |
           flutter --version
           dart --version
           flutter doctor -v
 
+
+      # =========================================
+      # 11. Clean
+      # =========================================
       - name: Flutter Clean
         run: |
           flutter clean
 
+
+      # =========================================
+      # 12. Pub Get
+      # =========================================
       - name: Flutter Pub Get
         run: |
           flutter pub get
 
+
+      # =========================================
+      # 13. Analyze
+      # =========================================
       - name: Flutter Analyze
         run: |
           flutter analyze
 
+
+      # =========================================
+      # 14. Build APK
+      # =========================================
       - name: Build Stream V19 APK
         run: |
           flutter build apk --release
 
+
+      # =========================================
+      # 15. Verify APK
+      # =========================================
       - name: Verify APK
         run: |
+          echo "========================================"
+          echo "APK"
+          echo "========================================"
+
           test -f build/app/outputs/flutter-apk/app-release.apk
 
-          echo "APK successfully created:"
           ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Prepare APK
+          echo ""
+          echo "Stream V19 APK created successfully."
+
+
+      # =========================================
+      # 16. Prepare APK
+      # =========================================
+      - name: Prepare Stream V19 APK
         run: |
           mkdir -p release
 
@@ -180,9 +203,15 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk \
             release/Stream-V19-release.apk
 
+          echo ""
+          echo "Final APK:"
           ls -lh release/Stream-V19-release.apk
 
-      - name: Upload APK
+
+      # =========================================
+      # 17. Upload APK
+      # =========================================
+      - name: Upload Stream V19 APK
         uses: actions/upload-artifact@v4
         with:
           name: Stream-V19-APK
